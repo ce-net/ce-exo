@@ -27,6 +27,10 @@ struct Args {
     /// Local CE node HTTP API base URL.
     #[arg(long, default_value = ce_rs::DEFAULT_BASE_URL, env = "CE_API_URL")]
     node_url: String,
+
+    /// Pin worker node ids (repeatable); skips DHT discovery. For static fleets or cross-node setups.
+    #[arg(long = "worker", value_name = "NODE_ID")]
+    workers: Vec<String>,
 }
 
 #[tokio::main]
@@ -46,7 +50,7 @@ async fn main() -> Result<()> {
     let ce = CeClient::new(args.node_url);
     ce.health().await.context("local CE node is not reachable — is `ce start` running?")?;
 
-    let router = Router::new(ce, registry, args.grant);
+    let router = Router::with_workers(ce, registry, args.grant, args.workers);
     let app = build_app(router);
 
     let addr: SocketAddr = args.bind.parse().with_context(|| format!("invalid --bind '{}'", args.bind))?;

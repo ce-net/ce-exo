@@ -105,6 +105,10 @@ enum Cmd {
         models: PathBuf,
         #[arg(long, default_value = "")]
         grant: String,
+        /// Pin worker node ids (repeatable); skips DHT discovery. Use for static fleets or when the
+        /// router and workers are on different nodes you already know.
+        #[arg(long = "worker", value_name = "NODE_ID")]
+        workers: Vec<String>,
     },
     /// Chat with a model through a router (streams by default).
     Chat {
@@ -155,7 +159,9 @@ async fn main() -> Result<()> {
         Cmd::Cluster { members, self_node, base_port, grant } => {
             cluster_connect(&cli.node_url, members, self_node, base_port, grant).await
         }
-        Cmd::Router { bind, models, grant } => router(&cli.node_url, &bind, &models, grant).await,
+        Cmd::Router { bind, models, grant, workers } => {
+            router(&cli.node_url, &bind, &models, grant, workers).await
+        }
         Cmd::Chat { model, prompt, url, no_stream } => chat(&url, &model, prompt, !no_stream).await,
         Cmd::Models { url } => models_cmd(&url).await,
         Cmd::Fleet => fleet(&cli.node_url).await,
@@ -315,11 +321,17 @@ async fn cluster_connect(
     Ok(())
 }
 
-async fn router(node_url: &str, bind: &str, models_path: &PathBuf, grant: String) -> Result<()> {
+async fn router(
+    node_url: &str,
+    bind: &str,
+    models_path: &PathBuf,
+    grant: String,
+    workers: Vec<String>,
+) -> Result<()> {
     let registry = if models_path.exists() { Registry::load(models_path)? } else { Registry::default() };
     let ce = CeClient::new(node_url.to_string());
     ce.health().await.context("local CE node not reachable")?;
-    let router = Router::new(ce, registry, grant);
+    let router = Router::with_workers(ce, registry, grant, workers);
     println!("ce-exo router on http://{bind}  (OpenAI: /v1, Ollama: /api)");
     ce_exo_router::serve(router, bind).await
 }

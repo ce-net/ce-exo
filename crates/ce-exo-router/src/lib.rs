@@ -40,12 +40,25 @@ pub struct Router {
     registry: Registry,
     /// Hex `ce-cap` chain presented to workers (empty = rely on worker `--open`).
     cap_chain_hex: String,
+    /// Explicit worker node ids. When non-empty, discovery is skipped and these are used directly
+    /// (deterministic static fleets; also the only way to reach a worker the DHT can't surface).
+    workers: Vec<String>,
     seq: AtomicU64,
 }
 
 impl Router {
     pub fn new(ce: CeClient, registry: Registry, cap_chain_hex: String) -> Arc<Self> {
-        Arc::new(Router { ce, registry, cap_chain_hex, seq: AtomicU64::new(0) })
+        Self::with_workers(ce, registry, cap_chain_hex, Vec::new())
+    }
+
+    /// Build a router that dispatches only to the given worker node ids (skips DHT discovery).
+    pub fn with_workers(
+        ce: CeClient,
+        registry: Registry,
+        cap_chain_hex: String,
+        workers: Vec<String>,
+    ) -> Arc<Self> {
+        Arc::new(Router { ce, registry, cap_chain_hex, workers, seq: AtomicU64::new(0) })
     }
 
     pub fn registry(&self) -> &Registry {
@@ -62,20 +75,42 @@ impl Router {
         format!("exo-{nanos:x}-{n:x}")
     }
 
-    /// Every worker advertising `exo-host`, with its live status (best-effort; unreachable workers
-    /// are dropped).
+    /// This node's own id, if reachable. The DHT (`find_service`) does not return the local node, so
+    /// a worker co-located with the router must be added as a candidate explicitly.
+    async fn local_node_id(&self) -> Option<String> {
+        self.ce.status().await.ok().map(|s| s.node_id)
+    }
+
+    /// Add the local node id to `nodes` (deduped) so a co-located worker is always a candidate.
+    async fn with_local(&self, mut nodes: Vec<String>) -> Vec<String> {
+        if let Some(me) = self.local_node_id().await {
+            if !nodes.contains(&me) {
+                nodes.push(me);
+            }
+        }
+        nodes
+    }
+
+    /// The node ids to consider as workers: the explicit pins if set, else DHT discovery on
+    /// `service` plus the local node (the DHT does not return self).
+    async fn candidates(&self, service: &str) -> Vec<String> {
+        if !self.workers.is_empty() {
+            return self.workers.clone();
+        }
+        let discovered = self.ce.find_service(service).await.unwrap_or_default();
+        self.with_local(discovered).await
+    }
+
+    /// Every worker (pins, or `exo-host` discovery + the local node), with its live status
+    /// (best-effort; non-workers and unreachable nodes are dropped).
     pub async fn fleet(&self) -> Result<Vec<WorkerStatus>> {
-        let nodes = self.ce.find_service("exo-host").await.unwrap_or_default();
+        let nodes = self.candidates("exo-host").await;
         Ok(self.status_of(&nodes).await)
     }
 
     /// Workers that currently serve `model`, least-loaded first.
     pub async fn workers_for_model(&self, model: &str) -> Result<Vec<WorkerStatus>> {
-        // Prefer the per-model service record; fall back to scanning the whole fleet.
-        let mut nodes = self.ce.find_service(&format!("exo-model:{model}")).await.unwrap_or_default();
-        if nodes.is_empty() {
-            nodes = self.ce.find_service("exo-host").await.unwrap_or_default();
-        }
+        let nodes = self.candidates(&format!("exo-model:{model}")).await;
         let mut serving: Vec<WorkerStatus> = self
             .status_of(&nodes)
             .await

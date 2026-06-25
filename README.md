@@ -109,6 +109,24 @@ Capability-gated via `ce-cap` (`exo:infer` / `exo:host` / `exo:shard` / `exo:adm
 `exo:model:<prefix>` attenuation). `--open` disables enforcement for single-user dev only. Tunnels
 require the `tunnel` ability on each member.
 
+## Testing
+
+```bash
+cargo test --workspace        # unit tests (core planner, caps, backends, cluster, orchestrate)
+cargo build --release         # build the binaries
+tests/e2e.sh                  # live end-to-end: 2 ephemeral CE nodes + worker + router, real
+                              # cross-node mesh dispatch through the OpenAI/Ollama API (mock engine)
+```
+
+`tests/e2e.sh` is a genuine end-to-end: it starts two isolated CE nodes, runs a worker on one and the
+router on the other, and drives real chat/stream/error requests through the mesh. It needs the `ce`
+binary; no GPU or exo required (mock backend).
+
+> Discovery note (surfaced by the E2E): a directed mesh request to your **own** node id fails (a node
+> can't dial itself), so the router and a worker must be on **different** nodes — which is the whole
+> point of distribution. Pin workers explicitly with `ce-exo router --worker <node_id>` for static
+> fleets; otherwise the router discovers them via the DHT.
+
 ## Why this matters (the bigger picture)
 
 ce-exo is the first example of a pattern that is itself the reason to use CE: **wrap a legacy backend
