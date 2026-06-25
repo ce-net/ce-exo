@@ -61,26 +61,26 @@ ce-exo chat mock-tiny "hello"                 # talk to it
 open http://127.0.0.1:8088                    # the web UI
 ```
 
-## Run real exo
+## Real exo, the seamless way (deploy from ONE machine)
+
+Distribution is central. You do **not** run anything on the other machines. Once a node is on your
+mesh and has granted you a capability (a one-time consent), you bring a model up across the whole
+fleet with one command from one place — each deploy is directed, capability-gated, and billed in
+credits:
 
 ```bash
-# On each machine: wrap (and optionally launch) a local exo instance.
-ce-exo serve --backend exo \
-  --engine-cmd 'exo --chatgpt-api-port 52415' \   # native on Apple Silicon
-  --engine-url http://127.0.0.1:52415 --open
-
-# Stitch the machines into one exo ring over the mesh (run on each machine, listing all members):
-ce-exo cluster \
-  --member <node_a_hex>:<exo_peer_port> \
-  --member <node_b_hex>:<exo_peer_port>
-# -> opens CE tunnels and prints the 127.0.0.1:<port> peers to give exo as manual discovery.
-
-# One public API + UI for the whole cluster:
-ce-exo router --models models.toml
+ce-exo deploy llama-3.1-70b            # auto-picks nodes from the atlas, deploys worker+exo to each
+# or name targets: ce-exo deploy llama-3.1-70b --node <node_a> --node <node_b>
+ce-exo router --models models.toml     # one public API + UI for the whole cluster
 ```
 
-On Linux/NVIDIA, swap the engine command for a container, e.g.
-`--engine-cmd 'docker run --rm --gpus all --network host <exo-image>'`.
+That's the point of CE: no SSH loop, no per-host setup. (The orchestrator is wired against CE's
+`mesh-deploy` primitive; the worker container image is the remaining piece — see
+[docs/roadmap.md](docs/roadmap.md) Phase 1.)
+
+> The low-level pieces still exist for advanced/manual use — `ce-exo serve` (run a worker locally) and
+> `ce-exo cluster` (open the CE tunnels by hand) — but the product is `ce-exo deploy`. If you find
+> yourself running commands on every machine, you're using the plumbing, not the tool.
 
 ## API & SDK
 
@@ -98,6 +98,19 @@ let reply = exo.chat("llama-3.1-8b", vec![msg::user("Explain CE in one line")]).
 Capability-gated via `ce-cap` (`exo:infer` / `exo:host` / `exo:shard` / `exo:admin`, plus the
 `exo:model:<prefix>` attenuation). `--open` disables enforcement for single-user dev only. Tunnels
 require the `tunnel` ability on each member.
+
+## Why this matters (the bigger picture)
+
+ce-exo is the first example of a pattern that is itself the reason to use CE: **wrap a legacy backend
+once, and get global, secure-by-default, pay-per-use distribution** — deployed and managed from one
+place, callable type-safely from anywhere, configurable from a public UI that never holds your keys.
+CE supplies the mesh, NAT traversal, capability auth, on-device key storage, and credit billing; the
+wrapped engine just does its job.
+
+- [docs/why-ce.md](docs/why-ce.md) — the motivation and developer experience (read this first).
+- [docs/wrapping.md](docs/wrapping.md) — the wrap-a-legacy-backend thesis + the reusable template.
+- [docs/roadmap.md](docs/roadmap.md) — seamless deploy, public-frontend secure config, typed
+  multi-language SDKs, deployment management/monitoring in the graph, rent-anywhere pay-per-use.
 
 ## Docs
 
