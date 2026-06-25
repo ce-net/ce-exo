@@ -63,24 +63,34 @@ open http://127.0.0.1:8088                    # the web UI
 
 ## Real exo, the seamless way (deploy from ONE machine)
 
-Distribution is central. You do **not** run anything on the other machines. Once a node is on your
-mesh and has granted you a capability (a one-time consent), you bring a model up across the whole
-fleet with one command from one place — each deploy is directed, capability-gated, and billed in
-credits:
+Distribution is central. You do **not** run anything on the other machines.
+
+**One-time per host (consent — unavoidable, you can't run code on someone's machine without it):** the
+machine runs its CE node + `rdev serve` and grants you a capability with the `spawn` ability:
 
 ```bash
-ce-exo deploy llama-3.1-70b            # auto-picks nodes from the atlas, deploys worker+exo to each
-# or name targets: ce-exo deploy llama-3.1-70b --node <node_a> --node <node_b>
-ce-exo router --models models.toml     # one public API + UI for the whole cluster
+# on the host, once:  ce start   &&   rdev serve   &&   grant you spawn(+tunnel)
 ```
 
-That's the point of CE: no SSH loop, no per-host setup. (The orchestrator is wired against CE's
-`mesh-deploy` primitive; the worker container image is the remaining piece — see
-[docs/roadmap.md](docs/roadmap.md) Phase 1.)
+**After that, deploy everywhere from your machine with one command:**
 
-> The low-level pieces still exist for advanced/manual use — `ce-exo serve` (run a worker locally) and
-> `ce-exo cluster` (open the CE tunnels by hand) — but the product is `ce-exo deploy`. If you find
-> yourself running commands on every machine, you're using the plumbing, not the tool.
+```bash
+ce-exo deploy llama-3.1-8b \
+  --engine-cmd 'exo --chatgpt-api-port 52415' \   # how each host launches exo
+  --grant <spawn-cap-token>                        # what the hosts granted you
+# auto-picks nodes from the atlas; or name them: --node <node_a> --node <node_b>
+
+ce-exo router --models models.toml                 # one public API + UI for the whole cluster
+```
+
+`deploy` launches the worker on each target **host** over the mesh via rdev `run` (a detached host
+job with full node/GPU access — *not* a sandboxed `network=none` cell, which couldn't reach its peers
+or the GPU). No SSH loop, no per-host setup beyond the one-time grant.
+
+> The low-level pieces still exist for advanced/manual use — `ce-exo serve` (run a worker on this
+> machine) and `ce-exo cluster` (open the CE tunnels by hand) — but the product is `ce-exo deploy`.
+> If you find yourself running commands on every machine, you're using the plumbing, not the tool.
+> (Hosts need `ce-exo` + the engine installed today; binary push over `rdev syncd` is roadmap P1.)
 
 ## API & SDK
 

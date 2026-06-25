@@ -17,14 +17,17 @@ Legend: ✅ done · 🚧 in progress · ⬜ planned
 ## Phase 1 — Seamless central distribution (🚧)
 The fix for the "run a command on every machine" anti-pattern. Deploy the whole cluster from one
 place; no per-host setup.
-- 🚧 `ce-exo deploy <model>` — directed, capability-gated, credit-billed `mesh-deploy` per node, with
-  atlas-based auto node selection. (Orchestrator landed; needs the worker container image + the
-  cell↔node API wiring to run end to end.)
-- ⬜ Publish the `ce-exo-worker` + engine container image (native exo on Apple Silicon stays a host
-  process; Linux/NVIDIA ships as a `--gpus` image).
-- ⬜ Auto-form the exo ring after deploy (open the tunnels + write discovery centrally — no `cluster`
-  step for the user).
+- ✅ `ce-exo deploy <model>` — launches the worker on each target **host** over the mesh via rdev
+  `run` (`rdev/run/start`, gated by the `spawn` capability), with atlas-based auto node selection.
+  Host execution (not a sandboxed `network=none` cell) is required because the worker must reach its
+  node, open tunnels, and use the GPU.
+- ⬜ Binary push: `rdev syncd` the `ce-exo` binary (+ engine bootstrap) to hosts that don't have it,
+  so the only prerequisite is a running CE node + `rdev serve` + the grant.
+- ⬜ Auto-form the exo ring after deploy: centrally drive each host (via rdev) to open its tunnels +
+  write discovery — no `cluster` step for the user.
 - ⬜ `ce-exo up <model>` becomes: plan → deploy → stitch → serve, one command, idempotent.
+- ⬜ A `ce-exo grant` helper so the one-time per-host consent (issue the `spawn`/`tunnel` capability)
+  is one command.
 
 ## Phase 2 — Public frontend, private infra, zero secrets (⬜)
 The capability-auth superpower (see [why-ce.md](why-ce.md) §2).

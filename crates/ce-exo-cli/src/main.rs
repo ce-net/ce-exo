@@ -56,7 +56,8 @@ enum Cmd {
         open: bool,
     },
     /// Deploy a model across the fleet from THIS machine — one command, no per-machine setup.
-    /// Issues a directed, capability-gated, credit-billed mesh deploy to each target node.
+    /// Launches the worker on each target host over the mesh (rdev `run`, gated by the `spawn`
+    /// capability). One-time setup per host: it runs its CE node + `rdev serve` and grants you a cap.
     Deploy {
         model: String,
         /// Target node id (repeatable). If omitted, the best nodes are picked from the atlas.
@@ -65,21 +66,19 @@ enum Cmd {
         /// Number of nodes to auto-select when none are named.
         #[arg(long, default_value_t = 2)]
         count: usize,
-        /// Container image bundling ce-exo-worker + the engine.
-        #[arg(long, default_value = "ghcr.io/ce-net/ce-exo-worker:latest")]
-        image: String,
-        #[arg(long, default_value_t = 4)]
-        cpu: u32,
-        #[arg(long, default_value_t = 8192)]
-        mem_mb: u64,
-        #[arg(long, default_value_t = 3600)]
-        duration: u64,
-        /// Credits committed per node.
-        #[arg(long, default_value_t = 100)]
-        bid: u64,
-        /// Hex ce-cap token authorizing `deploy` on the targets.
+        /// Hex ce-cap token granting the `spawn` ability on the targets (required unless they run --open).
+        #[arg(long, default_value = "")]
+        grant: String,
+        /// Engine launch command run on each host (e.g. 'exo --chatgpt-api-port 52415').
         #[arg(long)]
-        grant: Option<String>,
+        engine_cmd: Option<String>,
+        /// Engine OpenAI-compatible URL on each host.
+        #[arg(long)]
+        engine_url: Option<String>,
+        /// ce-exo executable name/path on the hosts.
+        #[arg(long, default_value = "ce-exo")]
+        exe: String,
+        /// Pass --open to the deployed workers (dev only).
         #[arg(long)]
         open: bool,
     },
@@ -150,9 +149,8 @@ async fn main() -> Result<()> {
         Cmd::Serve { backend, models, engine_url, engine_cmd, open } => {
             serve(&cli.node_url, &backend, models, engine_url, engine_cmd, open).await
         }
-        Cmd::Deploy { model, nodes, count, image, cpu, mem_mb, duration, bid, grant, open } => {
-            deploy(&cli.node_url, model, nodes, count, image, cpu, mem_mb, duration, bid, grant, open)
-                .await
+        Cmd::Deploy { model, nodes, count, grant, engine_cmd, engine_url, exe, open } => {
+            deploy(&cli.node_url, model, nodes, count, grant, engine_cmd, engine_url, exe, open).await
         }
         Cmd::Cluster { members, self_node, base_port, grant } => {
             cluster_connect(&cli.node_url, members, self_node, base_port, grant).await
@@ -233,15 +231,13 @@ async fn deploy(
     model: String,
     nodes: Vec<String>,
     count: usize,
-    image: String,
-    cpu: u32,
-    mem_mb: u64,
-    duration: u64,
-    bid: u64,
-    grant: Option<String>,
+    grant: String,
+    engine_cmd: Option<String>,
+    engine_url: Option<String>,
+    exe: String,
     open: bool,
 ) -> Result<()> {
-    use ce_exo_router::orchestrate::{deploy_workers, select_nodes, DeployOpts};
+    use ce_exo_router::orchestrate::{deploy_workers, select_nodes, DeploySpec};
     let ce = CeClient::new(node_url.to_string());
     ce.health().await.context("local CE node not reachable")?;
 
@@ -256,29 +252,20 @@ async fn deploy(
         nodes
     };
 
-    let opts = DeployOpts {
-        image,
-        model: model.clone(),
-        cpu_cores: cpu,
-        mem_mb,
-        duration_secs: duration,
-        bid_credits: bid,
-        grant,
-        open,
-    };
-    println!("deploying '{model}' to {} node(s) over the mesh...", targets.len());
-    let results = deploy_workers(&ce, &targets, &opts).await;
+    let spec = DeploySpec { model: model.clone(), engine_url, engine_cmd, open, caps: grant, cwd: None, exe };
+    println!("deploying '{model}' to {} node(s) over the mesh (rdev run)...", targets.len());
+    let results = deploy_workers(&ce, &targets, &spec).await;
     let mut ok = 0;
     for r in &results {
         match &r.job_id {
             Ok(job) => {
                 ok += 1;
-                println!("  {} -> deployed (job {})", short(&r.node_id), short(job));
+                println!("  {} -> launched (rdev job {})", short(&r.node_id), short(job));
             }
             Err(e) => println!("  {} -> FAILED: {e}", short(&r.node_id)),
         }
     }
-    println!("\n{ok}/{} deployed. Bring up the public endpoint with: ce-exo router", results.len());
+    println!("\n{ok}/{} launched. Bring up the public endpoint with: ce-exo router", results.len());
     if ok == 0 {
         bail!("no deploys succeeded");
     }
