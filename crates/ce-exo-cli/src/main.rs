@@ -66,6 +66,9 @@ enum Cmd {
         /// Number of nodes to auto-select when none are named.
         #[arg(long, default_value_t = 2)]
         count: usize,
+        /// Worker backend to run on each host (exo default; mock for tests).
+        #[arg(long, default_value = "exo")]
+        backend: String,
         /// Hex ce-cap token granting the `spawn` ability on the targets (required unless they run --open).
         #[arg(long, default_value = "")]
         grant: String,
@@ -153,8 +156,9 @@ async fn main() -> Result<()> {
         Cmd::Serve { backend, models, engine_url, engine_cmd, open } => {
             serve(&cli.node_url, &backend, models, engine_url, engine_cmd, open).await
         }
-        Cmd::Deploy { model, nodes, count, grant, engine_cmd, engine_url, exe, open } => {
-            deploy(&cli.node_url, model, nodes, count, grant, engine_cmd, engine_url, exe, open).await
+        Cmd::Deploy { model, nodes, count, backend, grant, engine_cmd, engine_url, exe, open } => {
+            deploy(&cli.node_url, model, nodes, count, backend, grant, engine_cmd, engine_url, exe, open)
+                .await
         }
         Cmd::Cluster { members, self_node, base_port, grant } => {
             cluster_connect(&cli.node_url, members, self_node, base_port, grant).await
@@ -237,6 +241,7 @@ async fn deploy(
     model: String,
     nodes: Vec<String>,
     count: usize,
+    backend: String,
     grant: String,
     engine_cmd: Option<String>,
     engine_url: Option<String>,
@@ -258,7 +263,7 @@ async fn deploy(
         nodes
     };
 
-    let spec = DeploySpec { model: model.clone(), engine_url, engine_cmd, open, caps: grant, cwd: None, exe };
+    let spec = DeploySpec { backend, model: model.clone(), engine_url, engine_cmd, open, caps: grant, cwd: None, exe };
     println!("deploying '{model}' to {} node(s) over the mesh (rdev run)...", targets.len());
     let results = deploy_workers(&ce, &targets, &spec).await;
     let mut ok = 0;

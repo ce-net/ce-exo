@@ -43,6 +43,8 @@ struct RdevResp {
 /// What to launch on each target and how to authorize it.
 #[derive(Debug, Clone)]
 pub struct DeploySpec {
+    /// Worker backend to run on the host (`exo` default; `mock` for tests; `llama`/`openai`).
+    pub backend: String,
     /// Model id the deployed worker should serve.
     pub model: String,
     /// The engine's OpenAI-compatible base URL on the host (passed to the worker).
@@ -62,6 +64,7 @@ pub struct DeploySpec {
 impl Default for DeploySpec {
     fn default() -> Self {
         DeploySpec {
+            backend: "exo".to_string(),
             model: String::new(),
             engine_url: None,
             engine_cmd: None,
@@ -80,7 +83,7 @@ impl DeploySpec {
             self.exe.clone(),
             "serve".to_string(),
             "--backend".into(),
-            "exo".into(),
+            self.backend.clone(),
             "--model".into(),
             self.model.clone(),
         ];

@@ -120,7 +120,16 @@ tests/e2e.sh                  # live end-to-end: 2 ephemeral CE nodes + worker +
 
 `tests/e2e.sh` is a genuine end-to-end: it starts two isolated CE nodes, runs a worker on one and the
 router on the other, and drives real chat/stream/error requests through the mesh. It needs the `ce`
-binary; no GPU or exo required (mock backend).
+binary; no GPU or exo required (mock backend). 12/12 checks pass against live nodes.
+
+```bash
+tests/deploy_e2e.sh           # proves the SEAMLESS DEPLOY path end to end
+```
+
+`tests/deploy_e2e.sh` proves the deploy model for real: a deployer node issues `ce-exo deploy`, which
+launches a worker on a *different* target host over the mesh via rdev `run` (gated by a `spawn`
+capability the target self-issued), and the router then routes inference to that deployed worker.
+6/6 checks pass — no manual per-machine setup beyond the one-time consent (`rdev serve` + grant).
 
 > Discovery note (surfaced by the E2E): a directed mesh request to your **own** node id fails (a node
 > can't dial itself), so the router and a worker must be on **different** nodes — which is the whole
