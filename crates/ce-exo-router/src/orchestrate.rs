@@ -1,61 +1,101 @@
 //! Seamless, central deployment — bring a model up across the fleet from **one** machine.
 //!
-//! The whole point of CE is that you do not log into each machine. Once a node has joined your mesh
-//! and granted you a capability (a one-time consent — you can't run code on someone's machine without
-//! it), deploying ce-exo onto it is a single central action, paid for in credits. This module turns a
-//! placement into a set of `mesh-deploy` calls — one directed, capability-gated, billed deploy per
-//! target node, issued from the coordinator over the mesh. No SSH, no per-machine setup.
+//! The point of CE is that you don't log into each machine. The one-time setup is per host and
+//! unavoidable (consent): a machine runs its CE node + `rdev serve` and grants you a capability with
+//! the `spawn` (and, for clustering, `tunnel`) ability. **After that, `ce-exo deploy` launches the
+//! worker on every target from here, with one command.**
 //!
-//! `ce.mesh_deploy(node, spec, grant)` runs the worker+engine cell on `node` and bills the bid to the
-//! coordinator. The same primitive deploys to a machine you own, a peer's donated machine, or one you
-//! rent — anywhere on the mesh, with one call.
+//! ## Why rdev, not mesh-deploy
+//!
+//! A CE `mesh-deploy` cell runs sandboxed with `network_mode = "none"` — correct for untrusted
+//! marketplace compute, wrong for a long-lived worker that must reach its local node, open tunnels,
+//! talk to GPU, and stream to peers. The right primitive is **rdev `run`**: a detached **host** job
+//! (full host/node/GPU access) started over the mesh by `rdev/run/start`, gated by the `spawn`
+//! ability. ce-exo speaks that protocol directly via `ce-rs` `request` — no dependency on the rdev
+//! binary. Each host must have `ce-exo` (and the engine) installed; binary push over `rdev syncd` is
+//! a follow-up.
 
-use anyhow::Result;
-use ce_rs::{Amount, BidSpec, CeClient};
+use anyhow::{anyhow, Result};
+use ce_rs::CeClient;
+use serde::{Deserialize, Serialize};
 
-/// What to deploy and how to pay for it.
-#[derive(Debug, Clone)]
-pub struct DeployOpts {
-    /// Container image bundling `ce-exo-worker` + the engine (exo). Pulled by the host on deploy.
-    pub image: String,
-    /// Model id the deployed worker should serve.
-    pub model: String,
-    pub cpu_cores: u32,
-    pub mem_mb: u64,
-    pub duration_secs: u64,
-    /// Credits committed per node (the deploy bid).
-    pub bid_credits: u64,
-    /// Hex `ce-cap` token authorizing `deploy` on the targets (None relies on a self-rooted grant).
-    pub grant: Option<String>,
-    /// Dev only: pass `--open` to the deployed worker.
-    pub open: bool,
+/// The subset of rdev's `run/start` request we send (rdev fills the rest from serde defaults).
+#[derive(Serialize)]
+struct RdevRunStart {
+    caps: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cmd: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
 }
 
-impl DeployOpts {
-    /// The container command that launches the worker against the engine in the same cell.
-    fn worker_cmd(&self) -> Vec<String> {
-        let mut cmd = vec![
-            "ce-exo-worker".to_string(),
+/// The subset of rdev's reply we read.
+#[derive(Deserialize, Default)]
+struct RdevResp {
+    #[serde(default)]
+    ok: bool,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    job_id: Option<String>,
+}
+
+/// What to launch on each target and how to authorize it.
+#[derive(Debug, Clone)]
+pub struct DeploySpec {
+    /// Model id the deployed worker should serve.
+    pub model: String,
+    /// The engine's OpenAI-compatible base URL on the host (passed to the worker).
+    pub engine_url: Option<String>,
+    /// Shell command the worker uses to launch + supervise the engine on the host (e.g. `exo …`).
+    pub engine_cmd: Option<String>,
+    /// Dev only: pass `--open` (skip capability enforcement) to the deployed worker.
+    pub open: bool,
+    /// Hex `ce-cap` token granting the `spawn` ability on the targets (rdev gates `run` on it).
+    pub caps: String,
+    /// Working directory on the host (confined to home by rdev).
+    pub cwd: Option<String>,
+    /// The `ce-exo` executable name/path on the host.
+    pub exe: String,
+}
+
+impl Default for DeploySpec {
+    fn default() -> Self {
+        DeploySpec {
+            model: String::new(),
+            engine_url: None,
+            engine_cmd: None,
+            open: false,
+            caps: String::new(),
+            cwd: None,
+            exe: "ce-exo".to_string(),
+        }
+    }
+}
+
+impl DeploySpec {
+    /// The host command that runs the worker (wrapping + optionally launching the engine).
+    pub fn worker_command(&self) -> Vec<String> {
+        let mut c = vec![
+            self.exe.clone(),
+            "serve".to_string(),
             "--backend".into(),
             "exo".into(),
             "--model".into(),
             self.model.clone(),
         ];
+        if let Some(u) = &self.engine_url {
+            c.push("--engine-url".into());
+            c.push(u.clone());
+        }
+        if let Some(e) = &self.engine_cmd {
+            c.push("--engine-cmd".into());
+            c.push(e.clone());
+        }
         if self.open {
-            cmd.push("--open".into());
+            c.push("--open".into());
         }
-        cmd
-    }
-
-    fn bid_spec(&self) -> BidSpec {
-        BidSpec {
-            image: self.image.clone(),
-            cmd: self.worker_cmd(),
-            cpu_cores: self.cpu_cores,
-            mem_mb: self.mem_mb,
-            duration_secs: self.duration_secs,
-            bid: Amount::from_credits(self.bid_credits),
-        }
+        c
     }
 }
 
@@ -63,24 +103,41 @@ impl DeployOpts {
 #[derive(Debug)]
 pub struct DeployResult {
     pub node_id: String,
-    /// The host-assigned job id, or the error if the deploy was refused/unreachable.
+    /// The rdev host-job id, or the error if the deploy was refused/unreachable.
     pub job_id: Result<String>,
 }
 
-/// Deploy the worker cell to every node, directed over the mesh and billed to the coordinator.
-/// Continues past failures so one unreachable node doesn't abort the rest; inspect each result.
-pub async fn deploy_workers(ce: &CeClient, nodes: &[String], opts: &DeployOpts) -> Vec<DeployResult> {
-    let spec = opts.bid_spec();
+/// Launch the worker on `node` via `rdev/run/start`, returning the host job id.
+async fn deploy_one(ce: &CeClient, node: &str, spec: &DeploySpec) -> Result<String> {
+    let req = RdevRunStart {
+        caps: spec.caps.clone(),
+        cmd: Some(spec.worker_command()),
+        cwd: spec.cwd.clone(),
+    };
+    let payload = serde_json::to_vec(&req)?;
+    let bytes = ce
+        .request(node, "rdev/run/start", &payload, 60_000)
+        .await
+        .map_err(|e| anyhow!("{e} (is `rdev serve` running on the target and the `spawn` capability granted?)"))?;
+    let r: RdevResp = serde_json::from_slice(&bytes)?;
+    if !r.ok {
+        return Err(anyhow!("deploy refused: {}", r.error.unwrap_or_else(|| "unknown".into())));
+    }
+    r.job_id.ok_or_else(|| anyhow!("host did not return a job id"))
+}
+
+/// Deploy the worker to every node from this machine. Continues past failures so one unreachable
+/// node doesn't abort the rest; inspect each result.
+pub async fn deploy_workers(ce: &CeClient, nodes: &[String], spec: &DeploySpec) -> Vec<DeployResult> {
     let mut out = Vec::with_capacity(nodes.len());
     for node in nodes {
-        let job_id = ce.mesh_deploy(node, &spec, opts.grant.as_deref()).await;
-        out.push(DeployResult { node_id: node.clone(), job_id });
+        out.push(DeployResult { node_id: node.clone(), job_id: deploy_one(ce, node, spec).await });
     }
     out
 }
 
-/// Pick the best `count` nodes for an exo deployment from the live atlas: prefer GPU, then memory,
-/// then least-loaded. Returns node ids. Used when the caller doesn't name explicit targets.
+/// Pick the best `count` nodes for a deployment from the live atlas: prefer GPU, then memory, then
+/// least-loaded. Used when the caller doesn't name explicit targets.
 pub async fn select_nodes(ce: &CeClient, count: usize) -> Result<Vec<String>> {
     let mut atlas = ce.atlas().await?;
     atlas.sort_by(|a, b| {
@@ -90,4 +147,25 @@ pub async fn select_nodes(ce: &CeClient, count: usize) -> Result<Vec<String>> {
             .then(a.running_jobs.cmp(&b.running_jobs))
     });
     Ok(atlas.into_iter().take(count).map(|e| e.node_id).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_command_includes_engine_and_open() {
+        let spec = DeploySpec {
+            model: "llama-3.1-8b".into(),
+            engine_url: Some("http://127.0.0.1:52415".into()),
+            engine_cmd: Some("exo --chatgpt-api-port 52415".into()),
+            open: true,
+            ..Default::default()
+        };
+        let c = spec.worker_command();
+        assert_eq!(c[0], "ce-exo");
+        assert!(c.windows(2).any(|w| w == ["--model", "llama-3.1-8b"]));
+        assert!(c.windows(2).any(|w| w == ["--engine-cmd", "exo --chatgpt-api-port 52415"]));
+        assert!(c.contains(&"--open".to_string()));
+    }
 }
