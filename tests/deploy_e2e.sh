@@ -40,14 +40,21 @@ if ! curl -sf -m3 "$LIVE/health" >/dev/null 2>&1; then echo "SKIP: no live CE no
 pkill -f "ce-exo serve --backend mock --model mock-tiny" 2>/dev/null || true
 
 LIVE_ID=$(curl -s -m3 "$LIVE/status" | grep -oE '"node_id":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}')
+# Direct local multiaddr of the live node (P2P :4001) so the deployer dials it on loopback,
+# deterministically, instead of via the relay.
+LIVE_PEER=$(curl -s -m3 "$LIVE/bootstrap" | grep -oE '12D3Koo[1-9A-HJ-NP-Za-km-z]+' | head -1)
+LIVE_MA="/ip4/127.0.0.1/tcp/4001/p2p/$LIVE_PEER"
 echo "deploy target (live node): $LIVE_ID"
+echo "target multiaddr: $LIVE_MA"
 
-# --- deployer node A ---
-"$CE" --data-dir "$TMP/a" start --port $APP --api-port $APORT --no-mine --ephemeral --no-mdns >"$TMP/a.log" 2>&1 & pids+=($!)
+# --- deployer node A, bootstrapped DIRECTLY to the live target ---
+"$CE" --data-dir "$TMP/a" start --port $APP --api-port $APORT --no-mine --ephemeral --no-mdns --bootstrap "$LIVE_MA" >"$TMP/a.log" 2>&1 & pids+=($!)
 wait_http "http://127.0.0.1:$APORT/health" 40 || { echo "FAIL: node A did not start"; tail -15 "$TMP/a.log"; exit 1; }
 A_ID=$(curl -s -m3 "http://127.0.0.1:$APORT/status" | grep -oE '"node_id":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}')
 ATOK=$(cat "$TMP/a/api.token")
 echo "deployer node A: $A_ID"
+# wait until A has actually connected to the target peer (deterministic dispatch needs the link up)
+for _ in $(seq 1 30); do curl -s -m3 "http://127.0.0.1:$APORT/netgraph" 2>/dev/null | grep -q "$LIVE_PEER" && break; sleep 1; done
 
 # --- rdev serve on the LIVE node, allow the ce-exo program ---
 RDEV_SPAWN_ALLOW=ce-exo "$RDEV" serve >"$TMP/rdev.log" 2>&1 & pids+=($!)

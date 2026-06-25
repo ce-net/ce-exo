@@ -90,7 +90,13 @@ or the GPU). No SSH loop, no per-host setup beyond the one-time grant.
 > The low-level pieces still exist for advanced/manual use — `ce-exo serve` (run a worker on this
 > machine) and `ce-exo cluster` (open the CE tunnels by hand) — but the product is `ce-exo deploy`.
 > If you find yourself running commands on every machine, you're using the plumbing, not the tool.
-> (Hosts need `ce-exo` + the engine installed today; binary push over `rdev syncd` is roadmap P1.)
+>
+> `deploy` launches each worker through CE's host-exec primitive (a `<ns>/run/start` mesh request,
+> `spawn`-capability gated). ce-exo doesn't hardcode which app provides it: the namespace defaults to
+> `rdev` (installed + E2E-proven) and is repointable with `CE_EXO_LAUNCH_NS`. The workspace has
+> several overlapping deploy/exec apps — see [docs/deploy-primitives.md](docs/deploy-primitives.md)
+> for the map and how ce-exo stays decoupled. Hosts need `ce-exo` + the engine installed today;
+> binary push is roadmap P1.
 
 ## API & SDK
 

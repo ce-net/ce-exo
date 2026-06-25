@@ -5,23 +5,34 @@
 //! the `spawn` (and, for clustering, `tunnel`) ability. **After that, `ce-exo deploy` launches the
 //! worker on every target from here, with one command.**
 //!
-//! ## Why rdev, not mesh-deploy
+//! ## The host-launch primitive (one dependency, repointable)
 //!
 //! A CE `mesh-deploy` cell runs sandboxed with `network_mode = "none"` — correct for untrusted
 //! marketplace compute, wrong for a long-lived worker that must reach its local node, open tunnels,
-//! talk to GPU, and stream to peers. The right primitive is **rdev `run`**: a detached **host** job
-//! (full host/node/GPU access) started over the mesh by `rdev/run/start`, gated by the `spawn`
-//! ability. ce-exo speaks that protocol directly via `ce-rs` `request` — no dependency on the rdev
-//! binary. Each host must have `ce-exo` (and the engine) installed; binary push over `rdev syncd` is
-//! a follow-up.
+//! use the GPU, and stream to peers. So a worker is launched as a **detached host job** through CE's
+//! host-exec primitive: a `<ns>/run/start {caps, cmd, cwd}` mesh request, gated by the `spawn`
+//! ability, answered with `{ok, job_id}`. ce-exo speaks that protocol directly via `ce-rs` `request`.
+//!
+//! The CE workspace has several apps in this space (the protocol below was first shipped by `rdev`,
+//! which is what is currently installed and what ce-exo's deploy E2E exercises). ce-exo does **not**
+//! hardcode any app: the topic namespace is the single constant [`host_launch_ns`] (default `rdev`,
+//! overridable with `CE_EXO_LAUNCH_NS`). If/when the canonical host-exec app settles under a new
+//! name, repoint here — one line — and nothing else changes.
 
 use anyhow::{anyhow, Result};
 use ce_rs::CeClient;
 use serde::{Deserialize, Serialize};
 
-/// The subset of rdev's `run/start` request we send (rdev fills the rest from serde defaults).
+/// The mesh topic namespace of the host-exec primitive ce-exo launches workers through. Defaults to
+/// `rdev` (the installed, E2E-proven implementation); override with `CE_EXO_LAUNCH_NS` to repoint at
+/// the canonical app without a code change.
+pub fn host_launch_ns() -> String {
+    std::env::var("CE_EXO_LAUNCH_NS").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "rdev".to_string())
+}
+
+/// The `run/start` request (extra fields filled by the server from serde defaults).
 #[derive(Serialize)]
-struct RdevRunStart {
+struct HostLaunchReq {
     caps: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     cmd: Option<Vec<String>>,
@@ -29,9 +40,9 @@ struct RdevRunStart {
     cwd: Option<String>,
 }
 
-/// The subset of rdev's reply we read.
+/// The subset of the reply we read.
 #[derive(Deserialize, Default)]
-struct RdevResp {
+struct HostLaunchResp {
     #[serde(default)]
     ok: bool,
     #[serde(default)]
@@ -110,19 +121,21 @@ pub struct DeployResult {
     pub job_id: Result<String>,
 }
 
-/// Launch the worker on `node` via `rdev/run/start`, returning the host job id.
+/// Launch the worker on `node` via the host-exec primitive's `run/start`, returning the host job id.
 async fn deploy_one(ce: &CeClient, node: &str, spec: &DeploySpec) -> Result<String> {
-    let req = RdevRunStart {
+    let req = HostLaunchReq {
         caps: spec.caps.clone(),
         cmd: Some(spec.worker_command()),
         cwd: spec.cwd.clone(),
     };
+    let ns = host_launch_ns();
+    let topic = format!("{ns}/run/start");
     let payload = serde_json::to_vec(&req)?;
     let bytes = ce
-        .request(node, "rdev/run/start", &payload, 60_000)
+        .request(node, &topic, &payload, 60_000)
         .await
-        .map_err(|e| anyhow!("{e} (is `rdev serve` running on the target and the `spawn` capability granted?)"))?;
-    let r: RdevResp = serde_json::from_slice(&bytes)?;
+        .map_err(|e| anyhow!("{e} (is the host-exec service '{ns}' running on the target with the `spawn` capability granted?)"))?;
+    let r: HostLaunchResp = serde_json::from_slice(&bytes)?;
     if !r.ok {
         return Err(anyhow!("deploy refused: {}", r.error.unwrap_or_else(|| "unknown".into())));
     }

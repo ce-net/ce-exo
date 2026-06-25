@@ -32,9 +32,11 @@ for b in "$CE" "$WORKER" "$ROUTER"; do [ -x "$b" ] || { echo "FAIL: missing bina
 # --- node A ---
 "$CE" --data-dir "$TMP/a" start --port $APP --api-port $APORT --no-mine --ephemeral --no-mdns >"$TMP/nodeA.log" 2>&1 & pids+=($!)
 wait_http "http://127.0.0.1:$APORT/health" 40 || { echo "FAIL: node A did not start"; tail -15 "$TMP/nodeA.log"; exit 1; }
-AMA=$(curl -s -m3 "http://127.0.0.1:$APORT/bootstrap" | grep -oE "/ip4/127\.0\.0\.1/tcp/$APP/p2p/[A-Za-z0-9]+" | head -1)
-[ -n "$AMA" ] || AMA=$(curl -s -m3 "http://127.0.0.1:$APORT/bootstrap" | grep -oE "/ip4/[0-9.]+/tcp/$APP/p2p/[A-Za-z0-9]+" | head -1)
-echo "node A multiaddr: ${AMA:-<none>}"
+# The node advertises only /p2p/<peerid> (NAT). Build a DIRECT local multiaddr so B dials A on
+# loopback (deterministic, no relay dependency).
+APEER=$(curl -s -m3 "http://127.0.0.1:$APORT/bootstrap" | grep -oE '12D3Koo[1-9A-HJ-NP-Za-km-z]+' | head -1)
+AMA="/ip4/127.0.0.1/tcp/$APP/p2p/$APEER"
+echo "node A multiaddr: $AMA"
 
 # --- node B, bootstrapped to A ---
 "$CE" --data-dir "$TMP/b" start --port $BPP --api-port $BPORT --no-mine --ephemeral --no-mdns --bootstrap "$AMA" >"$TMP/nodeB.log" 2>&1 & pids+=($!)
