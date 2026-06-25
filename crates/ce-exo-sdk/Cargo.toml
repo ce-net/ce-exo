@@ -1,0 +1,25 @@
+[package]
+name = "ce-exo-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Lightweight client SDK for a ce-exo cluster: chat / completion / model list against the router (OpenAI dialect), with optional direct-to-worker mesh dispatch behind the `mesh` feature. Thin reqwest wrapper — the minimal surface an app needs to talk to ce-exo nodes."
+
+[lib]
+name = "ce_exo_sdk"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Direct-to-worker dispatch over the CE mesh (pulls ce-rs). Off by default to stay lightweight.
+mesh = ["dep:ce-rs"]
+
+[dependencies]
+ce-exo-core = { path = "../ce-exo-core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+ce-rs = { workspace = true, optional = true }

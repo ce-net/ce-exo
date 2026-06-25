@@ -1,0 +1,41 @@
+# ce-exo model registry — the catalog the router and planner budget against.
+#
+# `weight_mb` is the on-disk (quantized) weight size; `layers` is the transformer block count (the
+# unit of pipeline splitting). `object_cid` is the CE object CID of the GGUF once published to the
+# mesh (workers fetch + verify it over the blob store); leave it unset for models not yet published.
+
+[[model]]
+id = "mock-tiny"
+family = "mock"
+params_b = 0.0
+layers = 4
+quant = "none"
+weight_mb = 16
+context = 8192
+
+[[model]]
+id = "llama3.1-8b-q4"
+family = "llama3.1"
+params_b = 8.0
+layers = 32
+quant = "Q4_K_M"
+weight_mb = 4900
+context = 8192
+
+[[model]]
+id = "llama3.1-70b-q4"
+family = "llama3.1"
+params_b = 70.0
+layers = 80
+quant = "Q4_K_M"
+weight_mb = 40000
+context = 8192
+
+[[model]]
+id = "qwen2.5-72b-q4"
+family = "qwen2.5"
+params_b = 72.0
+layers = 80
+quant = "Q4_K_M"
+weight_mb = 41000
+context = 32768

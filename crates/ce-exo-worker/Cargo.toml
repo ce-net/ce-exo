@@ -1,0 +1,31 @@
+[package]
+name = "ce-exo-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ce-exo per-node inference worker: probes hardware, advertises capacity over the CE mesh, pulls content-addressed weights, and serves capability-gated inference (replica or pipeline stage) via a pluggable backend (mock or llama.cpp)."
+
+[[bin]]
+name = "ce-exo-worker"
+path = "src/main.rs"
+
+[lib]
+name = "ce_exo_worker"
+path = "src/lib.rs"
+
+[dependencies]
+ce-exo-core = { path = "../ce-exo-core" }
+ce-rs.workspace = true
+ce-cap.workspace = true
+ce-identity = { git = "https://github.com/ce-net/ce" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true

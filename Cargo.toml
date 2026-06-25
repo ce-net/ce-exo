@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ce-exo-core",
+    "crates/ce-exo-worker",
+    "crates/ce-exo-router",
+    "crates/ce-exo-sdk",
+    "crates/ce-exo-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/ce-net/ce-exo"
+
+# ce-exo is an APP built ON CE primitives (ce-rs mesh transport, ce-cap authorization, ce-lb
+# placement). It adds no node endpoints. See docs/architecture.md.
+[workspace.dependencies]
+ce-rs = { git = "https://github.com/ce-net/ce-rs", features = ["serve"] }
+ce-cap = { git = "https://github.com/ce-net/ce" }
+ce-lb = { git = "https://github.com/ce-net/ce-lb" }
+
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "process", "io-util"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+axum = "0.7"
+toml = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

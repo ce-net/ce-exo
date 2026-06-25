@@ -1,0 +1,30 @@
+[package]
+name = "ce-exo-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ce-exo router: an OpenAI- and Ollama-compatible HTTP front door that discovers inference workers over the CE mesh, picks the least-loaded replica (or pipeline head), dispatches via request/reply, and relays the result. The one public surface of a ce-exo cluster."
+
+[[bin]]
+name = "ce-exo-router"
+path = "src/main.rs"
+
+[lib]
+name = "ce_exo_router"
+path = "src/lib.rs"
+
+[dependencies]
+ce-exo-core = { path = "../ce-exo-core" }
+ce-rs.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+axum.workspace = true
