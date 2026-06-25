@@ -55,6 +55,34 @@ enum Cmd {
         #[arg(long)]
         open: bool,
     },
+    /// Deploy a model across the fleet from THIS machine — one command, no per-machine setup.
+    /// Issues a directed, capability-gated, credit-billed mesh deploy to each target node.
+    Deploy {
+        model: String,
+        /// Target node id (repeatable). If omitted, the best nodes are picked from the atlas.
+        #[arg(long = "node", value_name = "NODE_ID")]
+        nodes: Vec<String>,
+        /// Number of nodes to auto-select when none are named.
+        #[arg(long, default_value_t = 2)]
+        count: usize,
+        /// Container image bundling ce-exo-worker + the engine.
+        #[arg(long, default_value = "ghcr.io/ce-net/ce-exo-worker:latest")]
+        image: String,
+        #[arg(long, default_value_t = 4)]
+        cpu: u32,
+        #[arg(long, default_value_t = 8192)]
+        mem_mb: u64,
+        #[arg(long, default_value_t = 3600)]
+        duration: u64,
+        /// Credits committed per node.
+        #[arg(long, default_value_t = 100)]
+        bid: u64,
+        /// Hex ce-cap token authorizing `deploy` on the targets.
+        #[arg(long)]
+        grant: Option<String>,
+        #[arg(long)]
+        open: bool,
+    },
     /// Stitch an exo cluster across machines: open CE tunnels to each member's exo peer port.
     Cluster {
         /// A member as `<node_id_hex>:<exo_peer_port>` (repeatable). Include all members.
@@ -121,6 +149,10 @@ async fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Serve { backend, models, engine_url, engine_cmd, open } => {
             serve(&cli.node_url, &backend, models, engine_url, engine_cmd, open).await
+        }
+        Cmd::Deploy { model, nodes, count, image, cpu, mem_mb, duration, bid, grant, open } => {
+            deploy(&cli.node_url, model, nodes, count, image, cpu, mem_mb, duration, bid, grant, open)
+                .await
         }
         Cmd::Cluster { members, self_node, base_port, grant } => {
             cluster_connect(&cli.node_url, members, self_node, base_port, grant).await
@@ -193,6 +225,64 @@ async fn serve(
         p.stop().await;
     }
     res
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn deploy(
+    node_url: &str,
+    model: String,
+    nodes: Vec<String>,
+    count: usize,
+    image: String,
+    cpu: u32,
+    mem_mb: u64,
+    duration: u64,
+    bid: u64,
+    grant: Option<String>,
+    open: bool,
+) -> Result<()> {
+    use ce_exo_router::orchestrate::{deploy_workers, select_nodes, DeployOpts};
+    let ce = CeClient::new(node_url.to_string());
+    ce.health().await.context("local CE node not reachable")?;
+
+    let targets = if nodes.is_empty() {
+        let picked = select_nodes(&ce, count).await?;
+        if picked.is_empty() {
+            bail!("no nodes found in the atlas; name targets with --node <id>");
+        }
+        println!("auto-selected {} node(s) from the atlas", picked.len());
+        picked
+    } else {
+        nodes
+    };
+
+    let opts = DeployOpts {
+        image,
+        model: model.clone(),
+        cpu_cores: cpu,
+        mem_mb,
+        duration_secs: duration,
+        bid_credits: bid,
+        grant,
+        open,
+    };
+    println!("deploying '{model}' to {} node(s) over the mesh...", targets.len());
+    let results = deploy_workers(&ce, &targets, &opts).await;
+    let mut ok = 0;
+    for r in &results {
+        match &r.job_id {
+            Ok(job) => {
+                ok += 1;
+                println!("  {} -> deployed (job {})", short(&r.node_id), short(job));
+            }
+            Err(e) => println!("  {} -> FAILED: {e}", short(&r.node_id)),
+        }
+    }
+    println!("\n{ok}/{} deployed. Bring up the public endpoint with: ce-exo router", results.len());
+    if ok == 0 {
+        bail!("no deploys succeeded");
+    }
+    Ok(())
 }
 
 async fn cluster_connect(

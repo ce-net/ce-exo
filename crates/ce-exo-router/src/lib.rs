@@ -16,6 +16,7 @@
 
 pub mod cluster;
 pub mod http;
+pub mod orchestrate;
 
 use anyhow::{anyhow, Context, Result};
 use ce_exo_core::plan::{plan, NodeCap, Placement, PlanOpts};
