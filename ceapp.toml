@@ -1,0 +1,29 @@
+# ce-exo — run LLMs distributed across the CE mesh by wrapping a real engine. Installed + supervised by the one `ce` node via ce-appmgr.
+
+[app]
+name    = "ce-exo"
+version = "0.1.0"
+summary = "Distributed LLM inference: wraps exo/llama.cpp with NAT traversal + cap auth + one API; serve a worker, run the router, plan, chat."
+runtime = "native"
+publisher = "c0be11e0ce0aaa769da6f9970244947d3d32a0c0d8302fb5f41f73d7950be456"
+provides = ["inference"]
+
+[native]
+bin = "ce-exo"
+[native.artifacts]
+"darwin-amd64" = "PLACEHOLDER_darwin_amd64"
+"linux-amd64"  = "PLACEHOLDER_linux_amd64"
+
+[deps]
+# Local CE node (mesh transport + cap auth + ce-lb placement); wraps a local engine process (exo/llama.cpp).
+
+[sandbox]
+tier       = "none"
+net        = "loopback"
+capability = "inherit"
+
+[daemon]
+# Run an inference worker that wraps the engine and joins the fleet over the mesh.
+enabled = true
+args    = ["serve"]
+restart = "on-failure"
