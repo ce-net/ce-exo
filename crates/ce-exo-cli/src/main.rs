@@ -470,10 +470,16 @@ async fn up(
 }
 
 async fn status(node_url: &str) -> Result<()> {
-    let s = CeClient::new(node_url.to_string()).status().await.context("local CE node not reachable")?;
+    let ce = CeClient::new(node_url.to_string());
+    let s = ce.status().await.context("local CE node not reachable")?;
     println!("node:    {}", s.node_id);
-    println!("height:  {}", s.height);
-    println!("balance: {}", s.balance);
+    println!("peer:    {}", s.peer_id);
+    println!("economy: {}", s.economy_enabled());
+    // Balance is an economy-ceapp concept (not substrate); read it via the economy SDK and only
+    // print it on an economy node (a core/--no-economy node returns an error here).
+    if let Ok(bal) = ce_economy::EconomyClient::new(ce).balance().await {
+        println!("balance: {}", bal.total.credits());
+    }
     Ok(())
 }
 

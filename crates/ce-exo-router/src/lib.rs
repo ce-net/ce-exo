@@ -191,7 +191,7 @@ impl Router {
         }
         let mut caps = Vec::with_capacity(fleet.len());
         for w in &fleet {
-            let history = self.ce.history(&w.node_id).await.map(|h| h.delivered_work()).unwrap_or(0);
+            let history = ce_ratio::history::history(&self.ce, &w.node_id).await.map(|h| h.delivered_work()).unwrap_or(0);
             caps.push(NodeCap {
                 node_id: w.node_id.clone(),
                 budget_mb: w.budget_mb,

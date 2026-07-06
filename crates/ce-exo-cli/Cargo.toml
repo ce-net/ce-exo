@@ -16,6 +16,7 @@ ce-exo-worker = { path = "../ce-exo-worker" }
 ce-exo-router = { path = "../ce-exo-router" }
 ce-exo-sdk = { path = "../ce-exo-sdk" }
 ce-rs.workspace = true
+ce-economy.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

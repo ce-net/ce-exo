@@ -18,6 +18,9 @@ repository = "https://github.com/ce-net/ce-exo"
 # placement). It adds no node endpoints. See docs/architecture.md.
 [workspace.dependencies]
 ce-rs = { git = "https://github.com/ce-net/ce-rs", features = ["serve"] }
+# Trust ceapp: reputation history (`ce_ratio::history::history`) — moved out of the core SDK.
+ce-ratio = { git = "https://github.com/ce-net/ce-ratio" }
+ce-economy = { git = "https://github.com/ce-net/economy-adapter" }
 ce-cap = { git = "https://github.com/ce-net/ce" }
 ce-lb = { git = "https://github.com/ce-net/ce-lb" }
 

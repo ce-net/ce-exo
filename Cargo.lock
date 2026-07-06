@@ -85,6 +85,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "autocfg"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
+
+[[package]]
 name = "axum"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,7 +206,6 @@ dependencies = [
 [[package]]
 name = "ce-cap"
 version = "0.1.0"
-source = "git+https://github.com/ce-net/ce#327813a29ab8f580aa5194cab51754340f48a9fe"
 dependencies = [
  "anyhow",
  "bincode",
@@ -211,10 +216,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ce-economy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ce-rs",
+ "futures-core",
+ "futures-util",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ce-exo-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ce-economy",
  "ce-exo-core",
  "ce-exo-router",
  "ce-exo-sdk",
@@ -244,6 +262,7 @@ dependencies = [
  "anyhow",
  "axum",
  "ce-exo-core",
+ "ce-ratio",
  "ce-rs",
  "clap",
  "futures-util",
@@ -292,23 +311,46 @@ dependencies = [
 [[package]]
 name = "ce-identity"
 version = "0.1.0"
-source = "git+https://github.com/ce-net/ce#327813a29ab8f580aa5194cab51754340f48a9fe"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
  "hex",
  "rand 0.8.6",
  "serde",
+ "sha2",
+]
+
+[[package]]
+name = "ce-lane"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "libc",
+ "nix",
+ "serde",
+]
+
+[[package]]
+name = "ce-ratio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ce-economy",
+ "ce-rs",
+ "serde",
+ "tracing",
 ]
 
 [[package]]
 name = "ce-rs"
 version = "0.1.0"
-source = "git+https://github.com/ce-net/ce-rs#a1832c8511c9a3c7f29d233d4eb3ce847d5f6ace"
 dependencies = [
  "anyhow",
  "bytes",
+ "ce-lane",
  "directories",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "hex",
@@ -967,6 +1009,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -981,6 +1032,19 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nix"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -2351,3 +2415,11 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "ce-lb"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "ce-scale-types"
+version = "0.1.0"

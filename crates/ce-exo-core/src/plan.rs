@@ -14,7 +14,7 @@
 //! silent truncation.
 //!
 //! This module is pure: it takes [`NodeCap`] structs (the caller fills them from `ce.atlas()` +
-//! `ce.history()`) and returns a [`Placement`]. No I/O, no mesh calls.
+//! `ce_ratio::history::history()`) and returns a [`Placement`]. No I/O, no mesh calls.
 
 use crate::registry::ModelEntry;
 use anyhow::{anyhow, Result};
